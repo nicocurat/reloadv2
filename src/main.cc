@@ -108,9 +108,11 @@ int main(int argc, char **argv) {
                         }
                         cv::Mat initialVector = initialMatrix * initialMatrix.col(3);
 
+                        // Matriz de la foto que sacaste
                         Mat relocMatrix = operate(img, mapRoute);
                         cout << "Relocation matrix: " << endl;
                         cout << relocMatrix << endl;
+                        // La de traslacion.
                         Mat displacementVector;
                         if (!bogusImage) {
                             displacementVector = calculateLocation(initialMatrix, relocMatrix, initialVector, meterFactor);
@@ -125,6 +127,45 @@ int main(int argc, char **argv) {
                         resp.add_header("Access-Control-Allow-Origin","*");
                         return resp;
                     });
+
+    CROW_ROUTE(app, "/image/slam")
+                .methods("POST"_method)
+                        ([configuration, mapRoute, meterFactor, initialImageLocation](const crow::request &req) {
+                            crow::response resp;
+                            resp = crow::response(200);
+                            auto body = crow::json::load(req.body);
+                            if (!body) {
+                                cout << "Imagen no pudo ser recibida" << endl;
+                                return crow::response(400);
+                            }
+                            const crow::json::detail::r_string &uri_string = body["uri"].s();
+                            std::vector<BYTE> decodedData = base64_decode(uri_string);
+                            cv::Mat img = cv::imdecode(decodedData, cv::IMREAD_UNCHANGED);
+
+                            namedWindow( "Display window", cv::WINDOW_NORMAL );   // Create a window for display.
+                            cv::imshow( "Display window", img );               // Show our image inside it.
+
+                            cv::Mat initialMatrix;
+                            initialMatrix = loadInitialMatrix(initialImageLocation, mapRoute);
+                            float x = initialMatrix.at<float>(0, 0);
+                            float y = initialMatrix.at<float>(1, 0);
+                            float z = initialMatrix.at<float>(2, 0);
+                            if (x == 0 && y == -1 && z == 0) {
+                                cerr << "Can't initialize properly" << endl;
+                                cerr << "The system can't localize the initial point" << endl;
+                                exit(1);
+                            }
+                            cv::Mat initialVector = initialMatrix * initialMatrix.col(3);
+
+                            // Matriz de la foto que sacaste
+                            Mat relocMatrix = operate(img, mapRoute);
+                            string message = getVectorAsString(relocMatrix);
+                            cout << "The resultant displacement vector is: " + message << endl;
+                            resp.body = message;
+                            resp.add_header("Content-Type", "text/plain");
+                            resp.add_header("Access-Control-Allow-Origin","*");
+                            return resp;
+                        });
     app.port(9000).multithreaded().run();
 }
 
